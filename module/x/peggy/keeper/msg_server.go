@@ -137,8 +137,15 @@ func (k msgServer) SendToEth(c context.Context, msg *types.MsgSendToEth) (*types
 // RequestBatch handles MsgRequestBatch
 func (k msgServer) RequestBatch(c context.Context, msg *types.MsgRequestBatch) (*types.MsgRequestBatchResponse, error) {
 	ctx := sdk.UnwrapSDKContext(c)
-	ec, _ := types.ERC20FromPeggyCoin(sdk.NewInt64Coin(msg.Denom, 0))
-	batchID, err := k.BuildOutgoingTXBatch(ctx, ec.Contract, OutgoingTxBatchSize)
+
+	// Check if the denom is a peggy coin, if not, check if there is a deployed ERC20 representing it.
+	// If not, error out
+	_, tokenContract, err := k.DenomToERC20(ctx, msg.Denom)
+	if err != nil {
+		return nil, err
+	}
+
+	batchID, err := k.BuildOutgoingTXBatch(ctx, tokenContract, OutgoingTxBatchSize)
 	if err != nil {
 		return nil, err
 	}
