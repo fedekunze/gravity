@@ -72,15 +72,18 @@ func (k msgServer) ValsetConfirm(c context.Context, msg *types.MsgValsetConfirm)
 	}
 
 	peggyID := k.GetPeggyID(ctx)
-	checkpoint := valset.GetCheckpoint(peggyID)
+	checkpoint, err := valset.GetCheckpoint(peggyID)
+	if err != nil {
+		return nil, err
+	}
 
 	sigBytes, err := hex.DecodeString(msg.Signature)
 	if err != nil {
 		return nil, sdkerrors.Wrap(types.ErrInvalid, "signature decoding")
 	}
 
-	valaddr, _ := sdk.AccAddressFromBech32(msg.Orchestrator)
-	validator := k.GetOrchestratorValidator(ctx, valaddr)
+	orchestratorAddr, _ := sdk.AccAddressFromBech32(msg.Orchestrator)
+	validator := k.GetOrchestratorValidator(ctx, orchestratorAddr)
 	if validator == nil {
 		sval := k.StakingKeeper.Validator(ctx, sdk.ValAddress(valaddr))
 		if sval == nil {

@@ -26,12 +26,12 @@ func TestOutgoingTxBatchCheckpointGold1(t *testing.T) {
 				Sender:      senderAddr.String(),
 				DestAddress: "0x9FC9C2DfBA3b6cF204C37a5F690619772b926e39",
 				Erc20Token: &ERC20Token{
-					Amount:   sdk.NewInt(0x1),
-					Contract: erc20Addr,
+					Amount:          sdk.NewInt(1),
+					ContractAddress: erc20Addr,
 				},
 				Erc20Fee: &ERC20Token{
-					Amount:   sdk.NewInt(0x1),
-					Contract: erc20Addr,
+					Amount:          sdk.NewInt(1),
+					ContractAddress: erc20Addr,
 				},
 			},
 		},

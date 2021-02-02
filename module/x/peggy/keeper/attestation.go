@@ -24,11 +24,11 @@ func (k Keeper) Attest(ctx sdk.Context, claim types.EthereumClaim, anyClaim *cod
 	}
 
 	// Tries to get an attestation with the same eventNonce and claim as the claim that was submitted.
-	att := k.GetAttestation(ctx, claim.GetEventNonce(), claim.ClaimHash())
+	att, found := k.GetAttestation(ctx, claim.GetEventNonce(), claim.ClaimHash())
 
 	// If it does not exist, create a new one.
-	if att == nil {
-		att = &types.Attestation{
+	if !found {
+		att = types.Attestation{
 			Observed: false,
 			Height:   uint64(ctx.BlockHeight()),
 			Claim:    anyClaim,
@@ -48,7 +48,7 @@ func (k Keeper) Attest(ctx sdk.Context, claim types.EthereumClaim, anyClaim *cod
 // and has not already been marked Observed, then calls processAttestation to actually apply it to the state,
 // and then marks it Observed and emits an event.
 func (k Keeper) TryAttestation(ctx sdk.Context, att *types.Attestation) {
-	claim, err := k.UnpackAttestationClaim(att)
+	claim, err := types.UnpackAttestationClaim(k.cdc, *att)
 	if err != nil {
 		panic("could not cast to claim")
 	}
@@ -132,8 +132,9 @@ func (k Keeper) emitObservedEvent(ctx sdk.Context, att *types.Attestation, claim
 // GetAttestationMapping returns a mapping of eventnonce -> attestations at that nonce
 func (k Keeper) GetAttestationMapping(ctx sdk.Context) (out map[uint64][]types.Attestation) {
 	out = make(map[uint64][]types.Attestation)
+
 	k.IterateAttestations(ctx, func(_ []byte, att types.Attestation) bool {
-		claim, err := k.UnpackAttestationClaim(&att)
+		claim, err := types.UnpackAttestationClaim(k.cdc, att)
 		if err != nil {
 			panic("couldn't cast to claim")
 		}

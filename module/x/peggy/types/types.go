@@ -18,15 +18,16 @@ import (
 //      BRIDGE VALIDATOR(S)         //
 //////////////////////////////////////
 
-// ValidateBasic performs stateless checks on validity
-func (b *BridgeValidator) ValidateBasic() error {
+// Validate performs stateless checks on the validator power and address
+func (b *BridgeValidator) Validate() error {
 	if b.Power == 0 {
 		return sdkerrors.Wrap(ErrInvalidPower, "power cannot be 0")
 	}
-	if err := ValidateEthAddress(b.EthereumAddress); err != nil {
-		return sdkerrors.Wrap(err, "ethereum address")
+	if IsZeroAddress(b.EthereumAddress) {
+		return fmt.Errorf("validator address cannot be the zero address")
 	}
-	return nil
+
+	return ValidateEthAddress(b.EthereumAddress)
 }
 
 // BridgeValidators is the sorted set of validator data for Ethereum bridge MultiSig set
@@ -101,45 +102,32 @@ func (b BridgeValidators) GetPowers() []uint64 {
 
 // ValidateBasic performs stateless checks
 func (b BridgeValidators) ValidateBasic() error {
-	// TODO: check if the set is sorted here?
-	if len(b) == 0 {
-		return ErrEmpty
-	}
-	for i := range b {
-		if err := b[i].ValidateBasic(); err != nil {
-			return sdkerrors.Wrapf(err, "member %d", i)
+	for _, validator := range b {
+		if err := validator.Validate(); err != nil {
+			return err
 		}
 	}
-	if b.HasDuplicates() {
-		return sdkerrors.Wrap(ErrDuplicate, "addresses")
-	}
+
 	return nil
 }
 
-// NewValset returns a new valset
-func NewValset(nonce, height uint64, members BridgeValidators) *Valset {
-	members.Sort()
-	var mem []*BridgeValidator
-	for _, val := range members {
-		mem = append(mem, val)
-	}
+// NewValset returns a new sorted valset
+func NewValset(nonce, height uint64, validators BridgeValidators) *Valset {
+	validators.Sort()
+
 	return &Valset{
 		Nonce:   uint64(nonce),
-		Members: mem,
+		Members: validators,
 		Height:  height,
 	}
 }
 
 // GetCheckpoint returns the checkpoint
-func (v Valset) GetCheckpoint(peggyIDstring string) []byte {
-	// TODO replace hardcoded "foo" here with a getter to retrieve the correct PeggyID from the store
-	// this will work for now because 'foo' is the test Peggy ID we are using
-	// var peggyIDString = "foo"
-
+func (v Valset) GetCheckpoint(peggyIDstring string) ([]byte, error) {
 	// error case here should not occur outside of testing since the above is a constant
-	contractAbi, abiErr := abi.JSON(strings.NewReader(ValsetCheckpointABIJSON))
-	if abiErr != nil {
-		panic("Bad ABI constant!")
+	contractAbi, err := abi.JSON(strings.NewReader(ValsetCheckpointABIJSON))
+	if err != nil {
+		return nil, err
 	}
 
 	// the contract argument is not a arbitrary length array but a fixed length 32 byte
@@ -176,21 +164,23 @@ func (v Valset) GetCheckpoint(peggyIDstring string) []byte {
 	// method name 'checkpoint'. If you where to replace the checkpoint constant in this code you would
 	// then need to adjust how many bytes you truncate off the front to get the output of abi.encode()
 	hash := crypto.Keccak256Hash(bytes[4:])
-	return hash.Bytes()
+	return hash.Bytes(), err
 }
 
-// WithoutEmptyMembers returns a new Valset without member that have 0 power or an empty Ethereum address.
-func (v *Valset) WithoutEmptyMembers() *Valset {
-	if v == nil {
-		return nil
+// Prune returns a new Valset without members that have 0 power or an empty Ethereum address.
+func (v *Valset) Prune() *Valset {
+	valset := &Valset{
+		Nonce:   v.Nonce,
+		Members: make([]*BridgeValidator, 0),
 	}
-	r := Valset{Nonce: v.Nonce, Members: make([]*BridgeValidator, 0, len(v.Members))}
-	for i := range v.Members {
-		if err := v.Members[i].ValidateBasic(); err == nil {
-			r.Members = append(r.Members, v.Members[i])
+
+	for _, validator := range v.Members {
+		if err := validator.Validate(); err == nil {
+			valset.Members = append(valset.Members, v.Members[i])
 		}
 	}
-	return &r
+
+	return valset
 }
 
 // Valsets is a collection of valset

@@ -188,37 +188,32 @@ func (k Keeper) GetValsets(ctx sdk.Context) types.Valsets {
 //     VALSET CONFIRMS     //
 /////////////////////////////
 
-// GetValsetConfirm returns a valset confirmation by a nonce and validator address
-func (k Keeper) GetValsetConfirm(ctx sdk.Context, nonce uint64, validator sdk.AccAddress) (types.MsgValsetConfirm, bool) {
+// GetValsetConfirm returns a valset confirmation signature by orchestrator address at a given height
+func (k Keeper) GetValsetConfirm(ctx sdk.Context, nonce uint64, orchestratorAddr sdk.AccAddress) ([]byte, bool) {
 	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(types.GetValsetConfirmKey(nonce, validator))
+	bz := store.Get(types.GetValsetConfirmKey(nonce, orchestratorAddr))
 	if bz == nil {
-		return types.MsgValsetConfirm{}, false
+		return nil, false
 	}
 
-	confirm := types.MsgValsetConfirm{}
-	k.cdc.MustUnmarshalBinaryBare(bz, &confirm)
-	return confirm, true
+	return bz, true
 }
 
-// SetValsetConfirm sets a valset confirmation
-func (k Keeper) SetValsetConfirm(ctx sdk.Context, valsetConf types.MsgValsetConfirm) []byte {
+// SetValsetConfirm sets a valset confirmation from an orchestrator
+func (k Keeper) SetValsetConfirm(ctx sdk.Context, nonce uint64, orchestratorAddr sdk.AccAddress, signature []byte) []byte {
 	store := ctx.KVStore(k.storeKey)
-	addr, err := sdk.AccAddressFromBech32(valsetConf.Orchestrator)
-	if err != nil {
-		panic(err)
-	}
 
-	key := types.GetValsetConfirmKey(valsetConf.Nonce, addr)
-	store.Set(key, k.cdc.MustMarshalBinaryBare(&valsetConf))
+	key := types.GetValsetConfirmKey(nonce, orchestratorAddr)
+	store.Set(key, signature)
 	return key
 }
 
-// GetValsetConfirms returns all validator set confirmations by nonce
-func (k Keeper) GetValsetConfirms(ctx sdk.Context, nonce uint64) (confirms []*types.MsgValsetConfirm) {
-	prefixStore := prefix.NewStore(ctx.KVStore(k.storeKey), types.ValsetConfirmKey)
-	start, end := prefixRange(types.UInt64Bytes(nonce))
-	iterator := prefixStore.Iterator(start, end)
+// GetValsetConfirmsByNonce returns all validator set confirmations by nonce
+func (k Keeper) GetValsetConfirmsByNonce(ctx sdk.Context, nonce uint64) (confirms []*types.MsgValsetConfirm) {
+	key := append(types.ValsetConfirmKey, sdk.Uint64ToBigEndian(nonce)...)
+
+	prefixStore := prefix.NewStore(ctx.KVStore(k.storeKey), key)
+	iterator := prefixStore.Iterator(nil, nil)
 
 	defer iterator.Close()
 

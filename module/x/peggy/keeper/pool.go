@@ -21,8 +21,8 @@ func (k Keeper) AddToOutgoingPool(ctx sdk.Context, sender sdk.AccAddress, counte
 	totalInVouchers := sdk.Coins{totalAmount}
 
 	// Ensure that the coin is a peggy voucher
-	if _, err := types.ValidatePeggyCoin(totalAmount); err != nil {
-		return 0, fmt.Errorf("amount not a peggy voucher coin: %s", err)
+	if err := types.ValidateBridgeCoin(totalAmount); err != nil {
+		return 0, err
 	}
 
 	// send coins to module in prep for burn
@@ -32,7 +32,7 @@ func (k Keeper) AddToOutgoingPool(ctx sdk.Context, sender sdk.AccAddress, counte
 
 	// burn vouchers to send them back to ETH
 	if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, totalInVouchers); err != nil {
-		panic(err)
+		return 0, err
 	}
 
 	// get next tx id from keeper
@@ -75,10 +75,12 @@ func (k Keeper) appendToUnbatchedTXIndex(ctx sdk.Context, fee sdk.Coin, txID uin
 	store := ctx.KVStore(k.storeKey)
 	idxKey := types.GetFeeSecondIndexKey(fee)
 	var idSet types.IDSet
+
 	if store.Has(idxKey) {
 		bz := store.Get(idxKey)
 		k.cdc.MustUnmarshalBinaryBare(bz, &idSet)
 	}
+
 	idSet.Ids = append(idSet.Ids, txID)
 	store.Set(idxKey, k.cdc.MustMarshalBinaryBare(&idSet))
 }
@@ -87,11 +89,14 @@ func (k Keeper) appendToUnbatchedTXIndex(ctx sdk.Context, fee sdk.Coin, txID uin
 func (k Keeper) prependToUnbatchedTXIndex(ctx sdk.Context, fee sdk.Coin, txID uint64) {
 	store := ctx.KVStore(k.storeKey)
 	idxKey := types.GetFeeSecondIndexKey(fee)
+
 	var idSet types.IDSet
+
 	if store.Has(idxKey) {
 		bz := store.Get(idxKey)
 		k.cdc.MustUnmarshalBinaryBare(bz, &idSet)
 	}
+
 	idSet.Ids = append([]uint64{txID}, idSet.Ids...)
 	store.Set(idxKey, k.cdc.MustMarshalBinaryBare(&idSet))
 }
@@ -101,11 +106,14 @@ func (k Keeper) removeFromUnbatchedTXIndex(ctx sdk.Context, fee sdk.Coin, txID u
 	store := ctx.KVStore(k.storeKey)
 	idxKey := types.GetFeeSecondIndexKey(fee)
 	var idSet types.IDSet
+
 	bz := store.Get(idxKey)
 	if bz == nil {
 		return sdkerrors.Wrap(types.ErrUnknown, "fee")
 	}
+
 	k.cdc.MustUnmarshalBinaryBare(bz, &idSet)
+
 	for i := range idSet.Ids {
 		if idSet.Ids[i] == txID {
 			idSet.Ids = append(idSet.Ids[0:i], idSet.Ids[i+1:]...)
@@ -146,7 +154,7 @@ func (k Keeper) removePoolEntry(ctx sdk.Context, id uint64) {
 	store.Delete(types.GetOutgoingTxPoolKey(id))
 }
 
-// IterateOutgoingPoolByFee itetates over the outgoing pool which is sorted by fee
+// IterateOutgoingPoolByFee iterates over the outgoing pool which is sorted by fee
 func (k Keeper) IterateOutgoingPoolByFee(ctx sdk.Context, contract string, cb func(uint64, *types.OutgoingTx) bool) {
 	prefixStore := prefix.NewStore(ctx.KVStore(k.storeKey), types.SecondIndexOutgoingTXFeeKey)
 	iter := prefixStore.ReverseIterator(prefixRange([]byte(contract)))

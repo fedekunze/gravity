@@ -65,6 +65,11 @@ func NewERC20Token(amount uint64, contractAddress string) *ERC20Token {
 	}
 }
 
+// GetAddress returns the ethereum address of the contract
+func (e ERC20Token) GetAddress() common.Address {
+	return common.HexToAddress(e.ContractAddress)
+}
+
 // PeggyCoin returns the peggy representation of the ERC20
 func (e *ERC20Token) PeggyCoin() sdk.Coin {
 	return sdk.NewCoin(fmt.Sprintf("%s%s%s", PeggyDenomPrefix, PeggyDenomSeparator, e.ContractAddress), e.Amount)

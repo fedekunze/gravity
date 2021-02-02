@@ -17,8 +17,8 @@ func TestGenesisStateValidate(t *testing.T) {
 			Params: &Params{
 				PeggyId:            "foo",
 				ContractSourceHash: "laksdjflasdkfja",
-				EthereumAddress:    "invalid-eth-address",
-				BridgeChainId:      3279089,
+				ContractAddress:    "invalid-eth-address",
+				EthChainId:         3279089,
 			},
 		}, expErr: true},
 	}

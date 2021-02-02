@@ -2,6 +2,7 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 const (
@@ -104,7 +105,7 @@ func GetEthAddressKey(validator sdk.ValAddress) []byte {
 // prefix    nonce
 // [0x0][0 0 0 0 0 0 0 1]
 func GetValsetKey(nonce uint64) []byte {
-	return append(ValsetRequestKey, UInt64Bytes(nonce)...)
+	return append(ValsetRequestKey, sdk.Uint64ToBigEndian(nonce)...)
 }
 
 // GetValsetConfirmKey returns the following key format
@@ -112,7 +113,7 @@ func GetValsetKey(nonce uint64) []byte {
 // [0x0][0 0 0 0 0 0 0 1][cosmos1ahx7f8wyertuus9r20284ej0asrs085case3kn]
 // MARK finish-batches: this is where the key is created in the old (presumed working) code
 func GetValsetConfirmKey(nonce uint64, validator sdk.AccAddress) []byte {
-	return append(ValsetConfirmKey, append(UInt64Bytes(nonce), validator.Bytes()...)...)
+	return append(ValsetConfirmKey, append(sdk.Uint64ToBigEndian(nonce), validator.Bytes()...)...)
 }
 
 // GetClaimKey returns the following key format
@@ -128,7 +129,7 @@ func GetClaimKey(details EthereumClaim) []byte {
 		panic("No claim without details!")
 	}
 	claimTypeLen := len([]byte{byte(details.GetType())})
-	nonceBz := UInt64Bytes(details.GetEventNonce())
+	nonceBz := sdk.Uint64ToBigEndian(details.GetEventNonce())
 	key := make([]byte, len(OracleClaimKey)+claimTypeLen+sdk.AddrLen+len(nonceBz)+len(detailsHash))
 	copy(key[0:], OracleClaimKey)
 	copy(key[len(OracleClaimKey):], []byte{byte(details.GetType())})
@@ -147,10 +148,10 @@ func GetClaimKey(details EthereumClaim) []byte {
 // validator X and validator y where making different claims about the same event nonce
 // Note that the claim hash does NOT include the claimer address and only identifies an event
 func GetAttestationKey(eventNonce uint64, claimHash []byte) []byte {
-	key := make([]byte, len(OracleAttestationKey)+len(UInt64Bytes(0))+len(claimHash))
+	key := make([]byte, len(OracleAttestationKey)+len(sdk.Uint64ToBigEndian(0))+len(claimHash))
 	copy(key[0:], OracleAttestationKey)
-	copy(key[len(OracleAttestationKey):], UInt64Bytes(eventNonce))
-	copy(key[len(OracleAttestationKey)+len(UInt64Bytes(0)):], claimHash)
+	copy(key[len(OracleAttestationKey):], sdk.Uint64ToBigEndian(eventNonce))
+	copy(key[len(OracleAttestationKey)+len(sdk.Uint64ToBigEndian(0)):], claimHash)
 	return key
 }
 
@@ -162,10 +163,10 @@ func GetAttestationKey(eventNonce uint64, claimHash []byte) []byte {
 // validator X and validator y where making different claims about the same event nonce
 // Note that the claim hash does NOT include the claimer address and only identifies an event
 func GetAttestationKeyWithHash(eventNonce uint64, claimHash []byte) []byte {
-	key := make([]byte, len(OracleAttestationKey)+len(UInt64Bytes(0))+len(claimHash))
+	key := make([]byte, len(OracleAttestationKey)+len(sdk.Uint64ToBigEndian(0))+len(claimHash))
 	copy(key[0:], OracleAttestationKey)
-	copy(key[len(OracleAttestationKey):], UInt64Bytes(eventNonce))
-	copy(key[len(OracleAttestationKey)+len(UInt64Bytes(0)):], claimHash)
+	copy(key[len(OracleAttestationKey):], sdk.Uint64ToBigEndian(eventNonce))
+	copy(key[len(OracleAttestationKey)+len(sdk.Uint64ToBigEndian(0)):], claimHash)
 	return key
 }
 
@@ -180,7 +181,7 @@ func GetOutgoingTxPoolKey(id uint64) []byte {
 // prefix     nonce                     eth-contract-address
 // [0xa][0 0 0 0 0 0 0 1][0xc783df8a850f42e7F7e57013759C285caa701eB6]
 func GetOutgoingTxBatchKey(tokenContract string, nonce uint64) []byte {
-	return append(append(OutgoingTXBatchKey, []byte(tokenContract)...), UInt64Bytes(nonce)...)
+	return append(append(OutgoingTXBatchKey, []byte(tokenContract)...), sdk.Uint64ToBigEndian(nonce)...)
 }
 
 // GetBatchConfirmKey returns the following key format
@@ -188,7 +189,7 @@ func GetOutgoingTxBatchKey(tokenContract string, nonce uint64) []byte {
 // [0xe1][0xc783df8a850f42e7F7e57013759C285caa701eB6][0 0 0 0 0 0 0 1][cosmosvaloper1ahx7f8wyertuus9r20284ej0asrs085case3kn]
 // TODO this should be a sdk.ValAddress
 func GetBatchConfirmKey(tokenContract string, batchNonce uint64, validator sdk.AccAddress) []byte {
-	a := append(UInt64Bytes(batchNonce), validator.Bytes()...)
+	a := append(sdk.Uint64ToBigEndian(batchNonce), validator.Bytes()...)
 	b := append([]byte(tokenContract), a...)
 	c := append(BatchConfirmKey, b...)
 	return c
@@ -201,8 +202,8 @@ func GetFeeSecondIndexKey(fee sdk.Coin) []byte {
 	er, _ := ERC20FromPeggyCoin(fee)
 	r := make([]byte, 1+ETHContractAddressLen+8)
 	copy(r[0:], SecondIndexOutgoingTXFeeKey)
-	copy(r[len(SecondIndexOutgoingTXFeeKey):], er.Contract)
-	copy(r[len(SecondIndexOutgoingTXFeeKey)+len(er.Contract):], sdk.Uint64ToBigEndian(fee.Amount.Uint64()))
+	copy(r[len(SecondIndexOutgoingTXFeeKey):], er.GetAddress().Bytes())
+	copy(r[len(SecondIndexOutgoingTXFeeKey)+common.AddressLength:], sdk.Uint64ToBigEndian(fee.Amount.Uint64()))
 	return r
 }
 
