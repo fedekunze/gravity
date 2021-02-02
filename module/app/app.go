@@ -192,7 +192,7 @@ type Peggy struct {
 	ibcKeeper        *ibckeeper.Keeper
 	evidenceKeeper   evidencekeeper.Keeper
 	transferKeeper   ibctransferkeeper.Keeper
-	peggyKeeper      keeper.Keeper
+	peggyKeeper      *keeper.Keeper
 
 	// make scoped keepers public for test purposes
 	ScopedIBCKeeper      capabilitykeeper.ScopedKeeper
@@ -378,13 +378,17 @@ func NewPeggyApp(
 	)
 	app.evidenceKeeper = *evidenceKeeper
 
-	app.peggyKeeper = keeper.NewKeeper(
+	peggyKeeper := keeper.NewKeeper(
 		appCodec,
 		keys[peggytypes.StoreKey],
 		app.GetSubspace(peggytypes.ModuleName),
 		stakingKeeper,
 		app.bankKeeper,
 	)
+
+	// set default attestation handler
+	peggyKeeper.SetAttestationHandler(keeper.DefaultAttestationHandler(peggyKeeper, app.bankKeeper))
+	app.peggyKeeper = peggyKeeper
 
 	var skipGenesisInvariants = cast.ToBool(appOpts.Get(crisis.FlagSkipGenesisInvariants))
 
@@ -453,7 +457,7 @@ func NewPeggyApp(
 		params.NewAppModule(app.paramsKeeper),
 		transferModule,
 		peggy.NewAppModule(
-			app.peggyKeeper,
+			*app.peggyKeeper,
 			app.bankKeeper,
 		),
 	)

@@ -8,9 +8,8 @@ import (
 // InitGenesis starts a chain from a genesis state
 func InitGenesis(ctx sdk.Context, k Keeper, data types.GenesisState) {
 	k.SetParams(ctx, *data.Params)
-	// reset valsets in state
+
 	for _, vs := range data.Valsets {
-		// TODO: block height?
 		k.StoreValsetUnsafe(ctx, vs)
 	}
 
@@ -21,7 +20,6 @@ func InitGenesis(ctx sdk.Context, k Keeper, data types.GenesisState) {
 
 	// reset batches in state
 	for _, batch := range data.Batches {
-		// TODO: block height?
 		k.StoreBatchUnsafe(ctx, batch)
 	}
 
@@ -37,7 +35,6 @@ func InitGenesis(ctx sdk.Context, k Keeper, data types.GenesisState) {
 			panic("couldn't cast to claim")
 		}
 
-		// TODO: block height?
 		k.SetAttestationUnsafe(ctx, claim.GetEventNonce(), claim.ClaimHash(), &att)
 	}
 }
@@ -57,7 +54,6 @@ func ExportGenesis(ctx sdk.Context, k Keeper) types.GenesisState {
 
 	// export valset confirmations from state
 	for _, vs := range valsets {
-		// TODO: set height = 0?
 		vsconfs = append(vsconfs, k.GetValsetConfirms(ctx, vs.Nonce)...)
 	}
 

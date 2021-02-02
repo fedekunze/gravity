@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/althea-net/peggy/module/x/peggy/client/cli"
-	"github.com/althea-net/peggy/module/x/peggy/client/rest"
 	"github.com/althea-net/peggy/module/x/peggy/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -62,13 +61,11 @@ func (AppModuleBasic) ValidateGenesis(cdc codec.JSONMarshaler, _ client.TxEncodi
 }
 
 // RegisterRESTRoutes implements app module basic
-func (AppModuleBasic) RegisterRESTRoutes(ctx client.Context, rtr *mux.Router) {
-	rest.RegisterRoutes(ctx, rtr, types.StoreKey)
-}
+func (AppModuleBasic) RegisterRESTRoutes(ctx client.Context, rtr *mux.Router) {}
 
 // GetQueryCmd implements app module basic
 func (AppModuleBasic) GetQueryCmd() *cobra.Command {
-	return cli.GetQueryCmd(types.StoreKey)
+	return cli.GetQueryCmd()
 }
 
 // GetTxCmd implements app module basic
@@ -76,7 +73,7 @@ func (AppModuleBasic) GetTxCmd() *cobra.Command {
 	return cli.GetTxCmd(types.StoreKey)
 }
 
-// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the distribution module.
+// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the peggy module.
 // also implements app modeul basic
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
 	types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
@@ -126,9 +123,9 @@ func (am AppModule) QuerierRoute() string {
 	return types.QuerierRoute
 }
 
-// LegacyQuerierHandler returns the distribution module sdk.Querier.
+// LegacyQuerierHandler returns the peggy module sdk.Querier.
 func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {
-	return keeper.NewQuerier(am.keeper)
+	return nil
 }
 
 // RegisterServices registers module services.
@@ -164,26 +161,26 @@ func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.Val
 
 // AppModuleSimulation functions
 
-// GenerateGenesisState creates a randomized GenState of the distribution module.
+// GenerateGenesisState creates a randomized GenState of the peggy module.
 func (AppModule) GenerateGenesisState(simState *module.SimulationState) {
 	// TODO: implement peggy simulation stuffs
 	// simulation.RandomizedGenState(simState)
 }
 
-// ProposalContents returns all the distribution content functions used to
+// ProposalContents returns all the peggy content functions used to
 // simulate governance proposals.
 func (am AppModule) ProposalContents(simState module.SimulationState) []simtypes.WeightedProposalContent {
 	// TODO: implement peggy simulation stuffs
 	return nil
 }
 
-// RandomizedParams creates randomized distribution param changes for the simulator.
+// RandomizedParams creates randomized peggy param changes for the simulator.
 func (AppModule) RandomizedParams(r *rand.Rand) []simtypes.ParamChange {
 	// TODO: implement peggy simulation stuffs
 	return nil
 }
 
-// RegisterStoreDecoder registers a decoder for distribution module's types
+// RegisterStoreDecoder registers a decoder for peggy module's types
 func (am AppModule) RegisterStoreDecoder(sdr sdk.StoreDecoderRegistry) {
 	// TODO: implement peggy simulation stuffs
 	// sdr[types.StoreKey] = simulation.NewDecodeStore(am.cdc)

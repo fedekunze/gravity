@@ -10,6 +10,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type msgServer struct {
@@ -25,19 +26,15 @@ func NewMsgServerImpl(keeper Keeper) types.MsgServer {
 var _ types.MsgServer = msgServer{}
 
 func (k msgServer) SetOrchestratorAddress(c context.Context, msg *types.MsgSetOrchestratorAddress) (*types.MsgSetOrchestratorAddressResponse, error) {
-	// ensure that this passes validation
-	err := msg.ValidateBasic()
-	if err != nil {
-		return nil, err
-	}
 
 	ctx := sdk.UnwrapSDKContext(c)
-	val, _ := sdk.ValAddressFromBech32(msg.Validator)
-	orch, _ := sdk.AccAddressFromBech32(msg.Orchestrator)
+
+	valAddress, _ := sdk.ValAddressFromBech32(msg.Validator)
+	orchestrator, _ := sdk.AccAddressFromBech32(msg.Orchestrator)
 
 	// ensure that the validator exists
-	if k.Keeper.StakingKeeper.Validator(ctx, val) == nil {
-		return nil, sdkerrors.Wrap(stakingtypes.ErrNoValidatorFound, val.String())
+	if k.Keeper.StakingKeeper.Validator(ctx, valAddress) == nil {
+		return nil, sdkerrors.Wrap(stakingtypes.ErrNoValidatorFound, valAddress.String())
 	}
 
 	// TODO consider impact of maliciously setting duplicate delegate
@@ -45,15 +42,18 @@ func (k msgServer) SetOrchestratorAddress(c context.Context, msg *types.MsgSetOr
 	// are required for this message it could be sent in a hostile way.
 
 	// set the orchestrator address
-	k.SetOrchestratorValidator(ctx, val, orch)
+	k.SetOrchestratorValidator(ctx, valAddress, orchestrator)
+
+	address := common.HexToAddress(msg.EthAddress)
+
 	// set the ethereum address
-	k.Keeper.SetEthAddress(ctx, val, msg.EthAddress)
+	k.Keeper.SetEthAddress(ctx, valAddress, address)
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, msg.Type()),
-			sdk.NewAttribute(types.AttributeKeySetOperatorAddr, orch.String()),
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute(types.AttributeKeySetOperatorAddr, msg.Orchestrator),
 		),
 	)
 
@@ -65,8 +65,9 @@ func (k msgServer) SetOrchestratorAddress(c context.Context, msg *types.MsgSetOr
 // TODO: check msgValsetConfirm to have an Orchestrator field instead of a Validator field
 func (k msgServer) ValsetConfirm(c context.Context, msg *types.MsgValsetConfirm) (*types.MsgValsetConfirmResponse, error) {
 	ctx := sdk.UnwrapSDKContext(c)
-	valset := k.GetValset(ctx, msg.Nonce)
-	if valset == nil {
+
+	valset, found := k.GetValset(ctx, msg.Nonce)
+	if !found {
 		return nil, sdkerrors.Wrap(types.ErrInvalid, "couldn't find valset")
 	}
 
@@ -88,8 +89,8 @@ func (k msgServer) ValsetConfirm(c context.Context, msg *types.MsgValsetConfirm)
 		validator = sval.GetOperator()
 	}
 
-	ethAddress := k.GetEthAddress(ctx, validator)
-	if ethAddress == "" {
+	ethAddress, found := k.GetEthAddress(ctx, validator)
+	if !found {
 		return nil, sdkerrors.Wrap(types.ErrEmpty, "eth address")
 	}
 
@@ -106,7 +107,7 @@ func (k msgServer) ValsetConfirm(c context.Context, msg *types.MsgValsetConfirm)
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, msg.Type()),
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeKeyValsetConfirmKey, string(key)),
 		),
 	)
@@ -118,6 +119,7 @@ func (k msgServer) ValsetConfirm(c context.Context, msg *types.MsgValsetConfirm)
 func (k msgServer) SendToEth(c context.Context, msg *types.MsgSendToEth) (*types.MsgSendToEthResponse, error) {
 	ctx := sdk.UnwrapSDKContext(c)
 	sender, _ := sdk.AccAddressFromBech32(msg.Sender)
+
 	txID, err := k.AddToOutgoingPool(ctx, sender, msg.EthDest, msg.Amount, msg.BridgeFee)
 	if err != nil {
 		return nil, err
@@ -126,7 +128,7 @@ func (k msgServer) SendToEth(c context.Context, msg *types.MsgSendToEth) (*types
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, msg.Type()),
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeKeyOutgoingTXID, fmt.Sprint(txID)),
 		),
 	)
@@ -162,7 +164,7 @@ func (k msgServer) RequestBatch(c context.Context, msg *types.MsgRequestBatch) (
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, msg.Type()),
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeKeyBatchNonce, fmt.Sprint(batchID.BatchNonce)),
 		),
 	)
@@ -220,7 +222,7 @@ func (k msgServer) ConfirmBatch(c context.Context, msg *types.MsgConfirmBatch) (
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, msg.Type()),
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeKeyBatchConfirmKey, string(key)),
 		),
 	)
@@ -266,7 +268,7 @@ func (k msgServer) DepositClaim(c context.Context, msg *types.MsgDepositClaim) (
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, msg.Type()),
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			// TODO: maybe return something better here? is this the right string representation?
 			sdk.NewAttribute(types.AttributeKeyAttestationID, string(types.GetAttestationKey(msg.EventNonce, msg.ClaimHash()))),
 		),
@@ -313,7 +315,7 @@ func (k msgServer) WithdrawClaim(c context.Context, msg *types.MsgWithdrawClaim)
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, msg.Type()),
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			// TODO: maybe return something better here? is this the right string representation?
 			sdk.NewAttribute(types.AttributeKeyAttestationID, string(types.GetAttestationKey(msg.EventNonce, msg.ClaimHash()))),
 		),
