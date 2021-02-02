@@ -142,7 +142,7 @@ func (msg MsgSendToEth) ValidateBasic() error {
 		return sdkerrors.Wrap(sdkerrors.ErrInvalidCoins, fmt.Sprintf("fee %#vs is not a voucher type", msg))
 	}
 	// fee and send must be of the same denom
-	if aCoin.Contract != fCoin.Contract {
+	if aCoin.ContractAddress != fCoin.ContractAddress {
 		return sdkerrors.Wrap(sdkerrors.ErrInvalidCoins, fmt.Sprintf("fee and amount must be the same type %s != %s", aCoin.Contract, fCoin.Contract))
 	}
 	if !msg.Amount.IsValid() || msg.Amount.IsZero() {
