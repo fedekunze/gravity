@@ -18,6 +18,7 @@ func (k Keeper) Attest(ctx sdk.Context, claim types.EthereumClaim, anyClaim *cod
 	if claim.GetEventNonce() != lastEventNonce+1 {
 		return nil, types.ErrNonContiguousEventNonce
 	}
+
 	valAddr := k.GetOrchestratorValidator(ctx, claim.GetClaimer())
 	if valAddr == nil {
 		panic("Could not find ValAddr for delegate key, should be checked by now")
@@ -96,7 +97,7 @@ func (k Keeper) processAttestation(ctx sdk.Context, att *types.Attestation, clai
 
 	// then execute in a new Tx so that we can store state on failure
 	xCtx, commit := ctx.CacheContext()
-	if err := k.AttestationHandler.Handle(xCtx, *att, claim); err != nil { // execute with a transient storage
+	if err := k.attestationHandler.Handle(xCtx, *att, claim); err != nil { // execute with a transient storage
 		// If the attestation fails, something has gone wrong and we can't recover it. Log and move on
 		// The attestation will still be marked "Observed", and validators can still be slashed for not
 		// having voted for it.
@@ -122,7 +123,6 @@ func (k Keeper) emitObservedEvent(ctx sdk.Context, att *types.Attestation, claim
 		sdk.NewAttribute(types.AttributeKeyBridgeChainID, strconv.Itoa(int(k.GetBridgeChainID(ctx)))),
 		sdk.NewAttribute(types.AttributeKeyAttestationID, string(types.GetAttestationKey(claim.GetEventNonce(), claim.ClaimHash()))), // todo: serialize with hex/ base64 ?
 		sdk.NewAttribute(types.AttributeKeyNonce, fmt.Sprint(claim.GetEventNonce())),
-		// TODO: do we want to emit more information?
 	)
 	ctx.EventManager().EmitEvent(observationEvent)
 }
@@ -134,18 +134,10 @@ func (k Keeper) SetAttestation(ctx sdk.Context, eventNonce uint64, claimHash []b
 	store.Set(aKey, k.cdc.MustMarshalBinaryBare(att))
 }
 
-// SetAttestationUnsafe sets the attestation w/o setting height and claim hash
-func (k Keeper) SetAttestationUnsafe(ctx sdk.Context, eventNonce uint64, claimHash []byte, att *types.Attestation) {
-	store := ctx.KVStore(k.storeKey)
-	aKey := types.GetAttestationKeyWithHash(eventNonce, claimHash)
-	store.Set(aKey, k.cdc.MustMarshalBinaryBare(att))
-}
-
 // GetAttestation return an attestation given a nonce
 func (k Keeper) GetAttestation(ctx sdk.Context, eventNonce uint64, claimHash []byte) *types.Attestation {
 	store := ctx.KVStore(k.storeKey)
-	aKey := types.GetAttestationKey(eventNonce, claimHash)
-	bz := store.Get(aKey)
+	bz := store.Get(types.GetAttestationKey(eventNonce, claimHash))
 	if len(bz) == 0 {
 		return nil
 	}
@@ -163,7 +155,7 @@ func (k Keeper) DeleteAttestation(ctx sdk.Context, eventNonce uint64, claimHash 
 // GetAttestationMapping returns a mapping of eventnonce -> attestations at that nonce
 func (k Keeper) GetAttestationMapping(ctx sdk.Context) (out map[uint64][]types.Attestation) {
 	out = make(map[uint64][]types.Attestation)
-	k.IterateAttestaions(ctx, func(_ []byte, att types.Attestation) bool {
+	k.IterateAttestations(ctx, func(_ []byte, att types.Attestation) bool {
 		claim, err := k.UnpackAttestationClaim(&att)
 		if err != nil {
 			panic("couldn't cast to claim")
@@ -179,8 +171,8 @@ func (k Keeper) GetAttestationMapping(ctx sdk.Context) (out map[uint64][]types.A
 	return
 }
 
-// IterateAttestaions iterates through all attestations
-func (k Keeper) IterateAttestaions(ctx sdk.Context, cb func([]byte, types.Attestation) bool) {
+// IterateAttestations iterates through all attestations
+func (k Keeper) IterateAttestations(ctx sdk.Context, cb func([]byte, types.Attestation) bool) {
 	store := ctx.KVStore(k.storeKey)
 	prefix := []byte(types.OracleAttestationKey)
 	iter := store.Iterator(prefixRange(prefix))
@@ -243,48 +235,49 @@ func (k Keeper) setLastObservedEventNonce(ctx sdk.Context, nonce uint64) {
 // GetLastEventNonceByValidator returns the latest event nonce for a given validator
 func (k Keeper) GetLastEventNonceByValidator(ctx sdk.Context, validator sdk.ValAddress) uint64 {
 	store := ctx.KVStore(k.storeKey)
-	bytes := store.Get(types.GetLastEventNonceByValidatorKey(validator))
+	bz := store.Get(types.GetLastEventNonceByValidatorKey(validator))
+	if bz != nil {
+		return sdk.BigEndianToUint64(bz)
+	}
 
-	if len(bytes) == 0 {
-		// in the case that we have no existing value this is the first
-		// time a validator is submitting a claim. Since we don't want to force
-		// them to replay the entire history of all events ever we can't start
-		// at zero
-		//
-		// We could start at the LastObservedEventNonce but if we do that this
-		// validator will be slashed, because they are responsible for making a claim
-		// on any attestation that has not yet passed the slashing window.
-		//
-		// Therefore we need to return to them the lowest attestation that is still within
-		// the slashing window. Since we delete attestations after the slashing window that's
-		// just the lowest observed event in the store. If no claims have been submitted in for
-		// params.SignedClaimsWindow we may have no attestations in our nonce. At which point
-		// the last observed which is a persistant and never cleaned counter will suffice.
-		lowest_observed := k.GetLastObservedEventNonce(ctx)
-		attmap := k.GetAttestationMapping(ctx)
-		// no new claims in params.SignedClaimsWindow, we can return the current value
-		// because the validator can't be slashed for an event that has already passed.
-		// so they only have to worry about the *next* event to occur
-		if len(attmap) == 0 {
-			return lowest_observed
-		}
-		for nonce, atts := range attmap {
-			for att := range atts {
-				if atts[att].Observed && nonce < lowest_observed {
-					lowest_observed = nonce
-				}
+	// in the case that we have no existing value this is the first
+	// time a validator is submitting a claim. Since we don't want to force
+	// them to replay the entire history of all events ever we can't start
+	// at zero
+	//
+	// We could start at the LastObservedEventNonce but if we do that this
+	// validator will be slashed, because they are responsible for making a claim
+	// on any attestation that has not yet passed the slashing window.
+	//
+	// Therefore we need to return to them the lowest attestation that is still within
+	// the slashing window. Since we delete attestations after the slashing window that's
+	// just the lowest observed event in the store. If no claims have been submitted in for
+	// params.SignedClaimsWindow we may have no attestations in our nonce. At which point
+	// the last observed which is a persistant and never cleaned counter will suffice.
+	lowestObserved := k.GetLastObservedEventNonce(ctx)
+	attmap := k.GetAttestationMapping(ctx)
+	// no new claims in params.SignedClaimsWindow, we can return the current value
+	// because the validator can't be slashed for an event that has already passed.
+	// so they only have to worry about the *next* event to occur
+	if len(attmap) == 0 {
+		return lowestObserved
+	}
+
+	for nonce, atts := range attmap {
+		for att := range atts {
+			if atts[att].Observed && nonce < lowestObserved {
+				lowestObserved = nonce
 			}
 		}
-		// return the latest event minus one so that the validator
-		// can submit that event and avoid slashing. special case
-		// for zero
-		if lowest_observed > 0 {
-			return lowest_observed - 1
-		} else {
-			return 0
-		}
 	}
-	return types.UInt64FromBytes(bytes)
+	// return the latest event minus one so that the validator
+	// can submit that event and avoid slashing. special case
+	// for zero
+	if lowestObserved > 0 {
+		return lowestObserved - 1
+	}
+	return 0
+
 }
 
 // setLastEventNonceByValidator sets the latest event nonce for a give validator

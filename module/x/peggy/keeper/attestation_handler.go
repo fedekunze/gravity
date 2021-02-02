@@ -6,22 +6,23 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
-// AttestationHandler processes `observed` Attestations
-type AttestationHandler struct {
+// DefaultAttestationHandler processes `observed` Attestations
+type DefaultAttestationHandler struct {
 	keeper     Keeper
 	bankKeeper types.BankKeeper
 }
 
 // Handle is the entry point for Attestation processing.
-func (a AttestationHandler) Handle(ctx sdk.Context, att types.Attestation, claim types.EthereumClaim) error {
+func (ah DefaultAttestationHandler) Handle(ctx sdk.Context, att types.Attestation, claim types.EthereumClaim) error {
 	switch claim := claim.(type) {
 	case *types.MsgDepositClaim:
 		token := types.ERC20Token{
 			Amount:   claim.Amount,
 			Contract: claim.TokenContract,
 		}
+
 		vouchers := sdk.NewCoins(token.PeggyCoin())
-		if err := a.bankKeeper.MintCoins(ctx, types.ModuleName, vouchers); err != nil {
+		if err := ah.bankKeeper.MintCoins(ctx, types.ModuleName, vouchers); err != nil {
 			return sdkerrors.Wrapf(err, "mint vouchers coins: %s", vouchers)
 		}
 
@@ -29,11 +30,13 @@ func (a AttestationHandler) Handle(ctx sdk.Context, att types.Attestation, claim
 		if err != nil {
 			return sdkerrors.Wrap(err, "invalid reciever address")
 		}
-		if err = a.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, addr, vouchers); err != nil {
+
+		if err = ah.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, addr, vouchers); err != nil {
 			return sdkerrors.Wrap(err, "transfer vouchers")
 		}
+
 	case *types.MsgWithdrawClaim:
-		a.keeper.OutgoingTxBatchExecuted(ctx, claim.TokenContract, claim.BatchNonce)
+		ah.keeper.OutgoingTxBatchExecuted(ctx, claim.TokenContract, claim.BatchNonce)
 
 	default:
 		return sdkerrors.Wrapf(types.ErrInvalid, "event type: %s", claim.GetType())
