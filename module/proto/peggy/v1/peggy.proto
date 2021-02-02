@@ -24,30 +24,46 @@ option go_package = "github.com/althea-net/peggy/module/x/peggy/types";
 message Params {
   option (gogoproto.stringer)  = false;
 
-  string peggy_id                         = 1;
-  string contract_source_hash             = 2;
-  uint64 start_threshold                  = 3;
-  string ethereum_address                 = 4;
-  uint64 bridge_chain_id                  = 5;
-  uint64 signed_valsets_window            = 6;
-  uint64 signed_batches_window            = 7;
-  uint64 signed_claims_window             = 8;
-  uint64 target_batch_timeout             = 10;
-  uint64 average_block_time               = 11;
-  uint64 average_ethereum_block_time      = 12;
-  bytes  slash_fraction_valset            = 13  [
+  // peggy_id is a random 32 byte value to prevent signature reuse
+  string peggy_id                         = 1 [(gogoproto.moretags) = "yaml:\"peggy_id\""];
+  // contract_source_hash defines the code hash of a known good version of the Peggy contract
+  // solidity code. It will be used to verify exactly which version of the
+  // bridge will be deployed.
+  string contract_source_hash             = 2 [(gogoproto.moretags) = "yaml:\"contract_source_hash\""];
+  // start_threshold defines the percentage of total voting power that must be online
+  // and participating in Peggy operations before a bridge can start operating
+  string  start_threshold            = 3  [
+    (gogoproto.moretags) = "yaml:\"start_threshold\"",
     (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
     (gogoproto.nullable)   = false
   ];
-  bytes  slash_fraction_batch             = 14 [
+  // contract_address is hex address of the bridge contract on the Ethereum side
+  string contract_address                 = 4;
+  // eth_chain_id the unique identifier of the corresponding EVM chain according to EIP155.
+  uint64 eth_chain_id                  = 5 [(gogoproto.moretags) = "yaml:\"eth_chain_id\""];
+  uint64 signed_valsets_window            = 6 [(gogoproto.moretags) = "yaml:\"signed_valsets_window\""];
+  uint64 signed_batches_window            = 7 [(gogoproto.moretags) = "yaml:\"signed_batches_window\""];
+  uint64 signed_claims_window             = 8 [(gogoproto.moretags) = "yaml:\"signed_claims_window\""];
+  uint64 target_batch_timeout             = 9 [(gogoproto.moretags) = "yaml:\"target_batch_timeout\""];
+  uint64 average_block_time               = 10 [(gogoproto.moretags) = "yaml:\"average_block_time\""];
+  uint64 average_ethereum_block_time      = 11 [(gogoproto.moretags) = "yaml:\"average_ethereum_block_time\""];
+  string  slash_fraction_valset            = 12  [
+    (gogoproto.moretags) = "yaml:\"slash_fraction_valset\"",
     (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
     (gogoproto.nullable)   = false
   ];
-  bytes  slash_fraction_claim             = 15 [
+  string  slash_fraction_batch             = 13 [
+    (gogoproto.moretags) = "yaml:\"slash_fraction_batch\"",
     (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
     (gogoproto.nullable)   = false
   ];
-  bytes  slash_fraction_conflicting_claim = 16 [
+  string  slash_fraction_claim             = 14 [
+    (gogoproto.moretags) = "yaml:\"slash_fraction_claim\"",
+    (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
+    (gogoproto.nullable)   = false
+  ];
+  string  slash_fraction_conflicting_claim = 15 [
+    (gogoproto.moretags) = "yaml:\"slash_fraction_conflicting_claim\"",
     (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
     (gogoproto.nullable)   = false
   ];
@@ -90,7 +106,7 @@ message Attestation {
 // The contract address on ETH of the token (note: developers should look up
 // the token symbol using the address on ETH to display for UI)
 message ERC20Token {
-  string contract_address = 1;
+  string contract_address = 1 [(gogoproto.moretags) = "yaml:\"contract_address\""];
   string amount   = 2 [
     (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Int", 
     (gogoproto.nullable) = false
@@ -111,10 +127,10 @@ enum SignType {
 
 // OutgoingTxBatch represents a batch of transactions going from Peggy to ETH
 message OutgoingTxBatch {
-  uint64                      batch_nonce    = 1;
-  uint64                      batch_timeout  = 2;
-  repeated OutgoingTransferTx transactions   = 3;
-  string                      token_contract = 4;
+  uint64                      batch_nonce    = 1 [(gogoproto.moretags) = "yaml:\"batch_nonce\""];
+  uint64                      batch_timeout  = 2 [(gogoproto.moretags) = "yaml:\"batch_timeout\""];
+  repeated OutgoingTransferTx transactions   = 3 ;
+  string                      token_contract = 4 [(gogoproto.moretags) = "yaml:\"token_contract\""];
   uint64                      block          = 5;
 }
 
@@ -122,9 +138,9 @@ message OutgoingTxBatch {
 message OutgoingTransferTx {
   uint64     id           = 1;
   string     sender       = 2;
-  string     dest_address = 3;
-  ERC20Token erc20_token  = 4;
-  ERC20Token erc20_fee    = 5;
+  string     dest_address = 3 [(gogoproto.moretags) = "yaml:\"dest_address\""];
+  ERC20Token erc20_token  = 4 [(gogoproto.moretags) = "yaml:\"erc20_token\""];
+  ERC20Token erc20_fee    = 5 [(gogoproto.moretags) = "yaml:\"erc20_fee\""];
 }
 
 
@@ -132,9 +148,12 @@ message OutgoingTransferTx {
 // TODO: can this type be replaced by outgoing transfer tx
 message OutgoingTx {
   string sender = 1;
-  string dest_addr = 2;
+  string dest_addr = 2 [(gogoproto.moretags) = "yaml:\"dest_addr\""];
   cosmos.base.v1beta1.Coin amount = 3 [(gogoproto.nullable) = false];
-  cosmos.base.v1beta1.Coin bridge_fee = 4 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin bridge_fee = 4 [
+    (gogoproto.moretags) = "yaml:\"bridge_fee\"",
+    (gogoproto.nullable) = false
+  ];
 }
 
 // IDSet represents a set of IDs
@@ -145,7 +164,7 @@ message IDSet {
 // BridgeValidator represents a validator's ETH address and its power
 message BridgeValidator {
   uint64 power            = 1;
-  string ethereum_address = 2;
+  string ethereum_address = 2 [(gogoproto.moretags) = "yaml:\"ethereum_address\""];
 }
 
 // Valset is the Ethereum Bridge Multsig Set, each peggy validator also
