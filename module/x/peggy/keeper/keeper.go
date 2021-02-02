@@ -15,10 +15,6 @@ import (
 	"github.com/tendermint/tendermint/libs/log"
 )
 
-type AttestationHandler interface {
-	Handle(sdk.Context, types.Attestation, types.EthereumClaim) error
-}
-
 // Keeper maintains the link to storage and exposes getter/setter methods for the various parts of the state machine
 type Keeper struct {
 	StakingKeeper types.StakingKeeper
@@ -30,33 +26,73 @@ type Keeper struct {
 	bankKeeper types.BankKeeper
 
 	attestationHandler AttestationHandler
+	handlerSealed      bool
 }
 
 // NewKeeper returns a new instance of the peggy keeper
-func NewKeeper(cdc codec.BinaryMarshaler, storeKey sdk.StoreKey, paramSpace paramtypes.Subspace, stakingKeeper types.StakingKeeper, bankKeeper types.BankKeeper) Keeper {
+func NewKeeper(cdc codec.BinaryMarshaler, storeKey sdk.StoreKey, paramSpace paramtypes.Subspace,
+	stakingKeeper types.StakingKeeper, bankKeeper types.BankKeeper,
+) *Keeper {
+
 	// set KeyTable if it has not already been set
 	if !paramSpace.HasKeyTable() {
 		paramSpace = paramSpace.WithKeyTable(types.ParamKeyTable())
 	}
 
-	k := Keeper{
+	return &Keeper{
 		cdc:           cdc,
 		paramSpace:    paramSpace,
 		storeKey:      storeKey,
 		StakingKeeper: stakingKeeper,
 		bankKeeper:    bankKeeper,
+		handlerSealed: false,
 	}
-	k.attestationHandler = DefaultAttestationHandler{
-		keeper:     k,
-		bankKeeper: bankKeeper,
-	}
-
-	return k
 }
 
 // Logger returns a module-specific logger.
 func (k Keeper) Logger(ctx sdk.Context) log.Logger {
 	return ctx.Logger().With("module", fmt.Sprintf("x/%s", types.ModuleName))
+}
+
+// SetAttestationHandler sets the attestation handler and if it has already been set.
+func (k Keeper) SetAttestationHandler(handler AttestationHandler) {
+	if k.handlerSealed {
+		panic("attestation handler is already set")
+	}
+
+	if k.attestationHandler == nil {
+		panic("attestation handler cannot be nil")
+	}
+
+	k.attestationHandler = handler
+	k.handlerSealed = true
+}
+
+// GetAttestation return an attestation given a nonce
+func (k Keeper) GetAttestation(ctx sdk.Context, eventNonce uint64, claimHash []byte) (types.Attestation, boo.) {
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(types.GetAttestationKey(eventNonce, claimHash))
+	if len(bz) == 0 {
+		return types.Attestation{}, false
+	}
+
+	var att types.Attestation
+	k.cdc.MustUnmarshalBinaryBare(bz, &att)
+	return &att, true
+}
+
+// SetAttestation sets the attestation in the store
+func (k Keeper) SetAttestation(ctx sdk.Context, eventNonce uint64, claimHash []byte, att types.Attestation) {
+	store := ctx.KVStore(k.storeKey)
+
+	aKey := types.GetAttestationKey(eventNonce, claimHash)
+	store.Set(aKey, k.cdc.MustMarshalBinaryBare(&att))
+}
+
+// DeleteAttestation deletes an attestation given an event nonce and claim
+func (k Keeper) DeleteAttestation(ctx sdk.Context, eventNonce uint64, claimHash []byte) {
+	store := ctx.KVStore(k.storeKey)
+	store.Delete(types.GetAttestationKeyWithHash(eventNonce, claimHash))
 }
 
 /////////////////////////////
@@ -242,8 +278,6 @@ func (k Keeper) SetBatchConfirm(ctx sdk.Context, batch *types.MsgConfirmBatch) [
 }
 
 // IterateBatchConfirmByNonceAndTokenContract iterates through all batch confirmations
-// MARK finish-batches: this is where the key is iterated in the old (presumed working) code
-// TODO: specify which nonce this is
 func (k Keeper) IterateBatchConfirmByNonceAndTokenContract(ctx sdk.Context, nonce uint64, tokenContract string, cb func([]byte, types.MsgConfirmBatch) bool) {
 	prefixStore := prefix.NewStore(ctx.KVStore(k.storeKey), types.BatchConfirmKey)
 	prefix := append([]byte(tokenContract), types.UInt64Bytes(nonce)...)

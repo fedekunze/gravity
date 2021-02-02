@@ -12,7 +12,7 @@ import (
 )
 
 // AddToOutgoingPool
-// - checks a counterpart denomintor exists for the given voucher type
+// - checks a counterpart denominator exists for the given voucher type
 // - burns the voucher for transfer amount and fees
 // - persists an OutgoingTx
 // - adds the TX to the `available` TX pool via a second index

@@ -9,7 +9,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// TODO-JT: carefully look at atomicity of this function
 func (k Keeper) Attest(ctx sdk.Context, claim types.EthereumClaim, anyClaim *codectypes.Any) (*types.Attestation, error) {
 	// Check that the nonce of this event is exactly one higher than the last nonce stored by this validator.
 	// We check the event nonce in processAttestation as well, but checking it here gives individual eth signers a chance to retry,
@@ -85,31 +84,34 @@ func (k Keeper) TryAttestation(ctx sdk.Context, att *types.Attestation) {
 }
 
 // processAttestation actually applies the attestation to the consensus state
-func (k Keeper) processAttestation(ctx sdk.Context, att *types.Attestation, claim types.EthereumClaim) {
+func (k Keeper) processAttestation(ctx sdk.Context, att *types.Attestation, claim types.EthereumClaim) error {
 	lastEventNonce := k.GetLastObservedEventNonce(ctx)
 	// this check is performed at the next level up so this should never panic
 	// outside of programmer error.
 	if claim.GetEventNonce() != uint64(lastEventNonce)+1 {
-		panic("attempting to apply events to state out of order")
+		fmt.Errorf("attempting to apply events to state out of order")
 	}
 	k.setLastObservedEventNonce(ctx, claim.GetEventNonce())
 	k.SetLastObservedEthereumBlockHeight(ctx, claim.GetBlockHeight())
 
 	// then execute in a new Tx so that we can store state on failure
 	xCtx, commit := ctx.CacheContext()
-	if err := k.attestationHandler.Handle(xCtx, *att, claim); err != nil { // execute with a transient storage
+	if err := k.attestationHandler(xCtx, *att, claim); err != nil { // execute with a transient storage
 		// If the attestation fails, something has gone wrong and we can't recover it. Log and move on
 		// The attestation will still be marked "Observed", and validators can still be slashed for not
 		// having voted for it.
-		k.logger(ctx).Error("attestation failed",
+		k.Logger(ctx).Error("attestation failed",
 			"cause", err.Error(),
 			"claim type", claim.GetType(),
 			"id", types.GetAttestationKey(claim.GetEventNonce(), claim.ClaimHash()),
 			"nonce", fmt.Sprint(claim.GetEventNonce()),
 		)
-	} else {
-		commit() // persist transient storage
+
+		// TODO: return error?
 	}
+	commit() // persist transient storage
+
+	return nil
 }
 
 // emitObservedEvent emits an event with information about an attestation that has been applied to
@@ -125,31 +127,6 @@ func (k Keeper) emitObservedEvent(ctx sdk.Context, att *types.Attestation, claim
 		sdk.NewAttribute(types.AttributeKeyNonce, fmt.Sprint(claim.GetEventNonce())),
 	)
 	ctx.EventManager().EmitEvent(observationEvent)
-}
-
-// SetAttestation sets the attestation in the store
-func (k Keeper) SetAttestation(ctx sdk.Context, eventNonce uint64, claimHash []byte, att *types.Attestation) {
-	store := ctx.KVStore(k.storeKey)
-	aKey := types.GetAttestationKey(eventNonce, claimHash)
-	store.Set(aKey, k.cdc.MustMarshalBinaryBare(att))
-}
-
-// GetAttestation return an attestation given a nonce
-func (k Keeper) GetAttestation(ctx sdk.Context, eventNonce uint64, claimHash []byte) *types.Attestation {
-	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(types.GetAttestationKey(eventNonce, claimHash))
-	if len(bz) == 0 {
-		return nil
-	}
-	var att types.Attestation
-	k.cdc.MustUnmarshalBinaryBare(bz, &att)
-	return &att
-}
-
-// DeleteAttestation deletes an attestation given an event nonce and claim
-func (k Keeper) DeleteAttestation(ctx sdk.Context, eventNonce uint64, claimHash []byte, att *types.Attestation) {
-	store := ctx.KVStore(k.storeKey)
-	store.Delete(types.GetAttestationKeyWithHash(eventNonce, claimHash))
 }
 
 // GetAttestationMapping returns a mapping of eventnonce -> attestations at that nonce
