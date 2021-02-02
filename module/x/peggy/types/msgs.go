@@ -6,6 +6,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/tendermint/tendermint/crypto/tmhash"
 )
 
@@ -61,11 +62,11 @@ func (msg *MsgSetOrchestratorAddress) GetSigners() []sdk.AccAddress {
 }
 
 // NewMsgValsetConfirm returns a new msgValsetConfirm
-func NewMsgValsetConfirm(nonce uint64, ethAddress string, validator sdk.AccAddress, signature string) *MsgValsetConfirm {
+func NewMsgValsetConfirm(nonce uint64, ethAddress common.Address, orchestrator sdk.AccAddress, signature string) *MsgValsetConfirm {
 	return &MsgValsetConfirm{
 		Nonce:        nonce,
-		Orchestrator: validator.String(),
-		EthAddress:   ethAddress,
+		Orchestrator: orchestrator.String(),
+		EthAddress:   ethAddress.String(),
 		Signature:    signature,
 	}
 }
@@ -78,23 +79,29 @@ func (msg *MsgValsetConfirm) Type() string { return "valset_confirm" }
 
 // ValidateBasic performs stateless checks
 func (msg *MsgValsetConfirm) ValidateBasic() (err error) {
+	if msg.Nonce == 0 {
+		return sdkerrors.Wrap(ErrInvalidNonce, "nonce cannot be 0")
+	}
 	if _, err = sdk.AccAddressFromBech32(msg.Orchestrator); err != nil {
 		return sdkerrors.Wrap(sdkerrors.ErrInvalidAddress, msg.Orchestrator)
 	}
 	if err := ValidateEthAddress(msg.EthAddress); err != nil {
 		return sdkerrors.Wrap(err, "ethereum address")
 	}
+	_, err = hex.DecodeString(msg.Signature)
+	if err != nil {
+		return sdkerrors.Wrapf(ErrInvalidSignature, "could not decode hex signature %s", msg.Signature)
+	}
 	return nil
 }
 
 // GetSignBytes encodes the message for signing
 func (msg *MsgValsetConfirm) GetSignBytes() []byte {
-	return sdk.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	panic("amino JSON signing is not supported")
 }
 
 // GetSigners defines whose signature is required
 func (msg *MsgValsetConfirm) GetSigners() []sdk.AccAddress {
-	// TODO: figure out how to convert between AccAddress and ValAddress properly
 	acc, err := sdk.AccAddressFromBech32(msg.Orchestrator)
 	if err != nil {
 		panic(err)
@@ -103,10 +110,10 @@ func (msg *MsgValsetConfirm) GetSigners() []sdk.AccAddress {
 }
 
 // NewMsgSendToEth returns a new msgSendToEth
-func NewMsgSendToEth(sender sdk.AccAddress, destAddress string, send sdk.Coin, bridgeFee sdk.Coin) *MsgSendToEth {
+func NewMsgSendToEth(sender sdk.AccAddress, destEthAddress common.Address, send sdk.Coin, bridgeFee sdk.Coin) *MsgSendToEth {
 	return &MsgSendToEth{
 		Sender:    sender.String(),
-		EthDest:   destAddress,
+		EthDest:   destEthAddress.String(),
 		Amount:    send,
 		BridgeFee: bridgeFee,
 	}
@@ -165,9 +172,10 @@ func (msg MsgSendToEth) GetSigners() []sdk.AccAddress {
 }
 
 // NewMsgRequestBatch returns a new msgRequestBatch
-func NewMsgRequestBatch(orchestrator sdk.AccAddress) *MsgRequestBatch {
+func NewMsgRequestBatch(orchestrator sdk.AccAddress, denom string) *MsgRequestBatch {
 	return &MsgRequestBatch{
 		Orchestrator: orchestrator.String(),
+		Denom:        denom,
 	}
 }
 
@@ -183,7 +191,7 @@ func (msg MsgRequestBatch) ValidateBasic() error {
 		return sdkerrors.Wrap(sdkerrors.ErrInvalidAddress, msg.Orchestrator)
 	}
 	if _, err := ERC20FromPeggyCoin(sdk.NewInt64Coin(msg.Denom, 0)); err != nil {
-		return sdkerrors.Wrapf(ErrInvalid, "invalid denom: %s", err)
+		return sdkerrors.Wrapf(sdkerrors.ErrInvalidCoins, "invalid denom: %s", err)
 	}
 	return nil
 }
@@ -222,7 +230,7 @@ func (msg MsgConfirmBatch) ValidateBasic() error {
 	}
 	_, err := hex.DecodeString(msg.Signature)
 	if err != nil {
-		return sdkerrors.Wrapf(sdkerrors.ErrUnknownRequest, "Could not decode hex string %s", msg.Signature)
+		return sdkerrors.Wrapf(ErrInvalidSignature, "could not decode hex signature %s", msg.Signature)
 	}
 	return nil
 }
@@ -239,28 +247,6 @@ func (msg MsgConfirmBatch) GetSigners() []sdk.AccAddress {
 		panic(err)
 	}
 	return []sdk.AccAddress{acc}
-}
-
-// EthereumClaim represents a claim on ethereum state
-type EthereumClaim interface {
-	// All Ethereum claims that we relay from the Peggy contract and into the module
-	// have a nonce that is monotonically increasing and unique, since this nonce is
-	// issued by the Ethereum contract it is immutable and must be agreed on by all validators
-	// any disagreement on what claim goes to what nonce means someone is lying.
-	GetEventNonce() uint64
-	// The block height that the claimed event occurred on. This EventNonce provides sufficient
-	// ordering for the execution of all claims. The block height is used only for batchTimeouts
-	// when we go to create a new batch we set the timeout some number of batches out from the last
-	// known height plus projected block progress since then.
-	GetBlockHeight() uint64
-	// the delegate address of the claimer, for MsgDepositClaim and MsgWithdrawClaim
-	// this is sent in as the sdk.AccAddress of the delegated key. it is up to the user
-	// to disambiguate this into a sdk.ValAddress
-	GetClaimer() sdk.AccAddress
-	// Which type of claim this is
-	GetType() ClaimType
-	ValidateBasic() error
-	ClaimHash() []byte
 }
 
 var (
@@ -295,15 +281,10 @@ func (e *MsgDepositClaim) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgDepositClaim) GetSignBytes() []byte {
-	return sdk.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	panic("amino JSON signing is not supported")
 }
 
 func (msg MsgDepositClaim) GetClaimer() sdk.AccAddress {
-	err := msg.ValidateBasic()
-	if err != nil {
-		panic("MsgDepositClaim failed ValidateBasic! Should have been handled earlier")
-	}
-
 	val, _ := sdk.AccAddressFromBech32(msg.Orchestrator)
 	return val
 }
@@ -364,7 +345,7 @@ func (b *MsgWithdrawClaim) ClaimHash() []byte {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgWithdrawClaim) GetSignBytes() []byte {
-	return sdk.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	panic("amino JSON signing is not supported")
 }
 
 func (msg MsgWithdrawClaim) GetClaimer() sdk.AccAddress {

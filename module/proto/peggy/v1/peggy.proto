@@ -1,0 +1,168 @@
+syntax = "proto3";
+package peggy.v1;
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/any.proto";
+import "cosmos/base/v1beta1/coin.proto";
+
+option go_package = "github.com/althea-net/peggy/module/x/peggy/types";
+
+// Params represent the peggy genesis and store parameters
+// PEGGYID: 
+// a random 32 byte value to prevent signature reuse
+// CONTRACTHASH: 
+// the code hash of a known good version of the Peggy contract
+// solidity code. It will be used to verify exactly which version of the
+// bridge will be deployed.
+// STARTTHRESHOLD:
+// the percentage of total voting power that must be online
+// and participating in Peggy operations before a bridge can start operating
+// BRIDGECONTRACTADDRESS: 
+// is address of the bridge contract on the Ethereum side
+// BRIDGECHAINID:
+// the unique identifier of the Ethereum chain
+message Params {
+  option (gogoproto.stringer)  = false;
+
+  string peggy_id                         = 1;
+  string contract_source_hash             = 2;
+  uint64 start_threshold                  = 3;
+  string ethereum_address                 = 4;
+  uint64 bridge_chain_id                  = 5;
+  uint64 signed_valsets_window            = 6;
+  uint64 signed_batches_window            = 7;
+  uint64 signed_claims_window             = 8;
+  uint64 target_batch_timeout             = 10;
+  uint64 average_block_time               = 11;
+  uint64 average_ethereum_block_time      = 12;
+  bytes  slash_fraction_valset            = 13  [
+    (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
+    (gogoproto.nullable)   = false
+  ];
+  bytes  slash_fraction_batch             = 14 [
+    (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
+    (gogoproto.nullable)   = false
+  ];
+  bytes  slash_fraction_claim             = 15 [
+    (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
+    (gogoproto.nullable)   = false
+  ];
+  bytes  slash_fraction_conflicting_claim = 16 [
+    (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
+    (gogoproto.nullable)   = false
+  ];
+}
+
+// ClaimType is the cosmos type of an event from the counterpart chain that can
+// be handled
+enum ClaimType {
+  option (gogoproto.goproto_enum_prefix) = false;
+
+  CLAIM_TYPE_UNKNOWN  = 0 [(gogoproto.enumvalue_customname) = "CLAIM_TYPE_UNKNOWN" ];
+  CLAIM_TYPE_DEPOSIT  = 1 [(gogoproto.enumvalue_customname) = "CLAIM_TYPE_DEPOSIT" ];
+  CLAIM_TYPE_WITHDRAW = 2 [(gogoproto.enumvalue_customname) = "CLAIM_TYPE_WITHDRAW"];
+}
+
+// Attestation is an aggregate of `claims` that eventually becomes `observed` by
+// all orchestrators
+// EVENT_NONCE:
+// EventNonce a nonce provided by the peggy contract that is unique per event fired
+// These event nonces must be relayed in order. This is a correctness issue,
+// if relaying out of order transaction replay attacks become possible
+// OBSERVED:
+// Observed indicates that >67% of validators have attested to the event,
+// and that the event should be executed by the peggy state machine
+//
+// The actual content of the claims is passed in with the transaction making the claim
+// and then passed through the call stack alongside the attestation while it is processed
+// the key in which the attestation is stored is keyed on the exact details of the claim
+// but there is no reason to store those exact details becuause the next message sender
+// will kindly provide you with them.
+message Attestation {
+  bool                observed         = 1;
+  repeated string     votes            = 2;
+  uint64              height           = 3;
+  google.protobuf.Any claim            = 4;
+}
+
+// ERC20Token unique identifier for an Ethereum ERC20 token.
+// CONTRACT:
+// The contract address on ETH of the token (note: developers should look up
+// the token symbol using the address on ETH to display for UI)
+message ERC20Token {
+  string contract_address = 1;
+  string amount   = 2 [
+    (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Int", 
+    (gogoproto.nullable) = false
+  ];
+}
+
+
+// SignType defines messages that have been signed by an orchestrator
+enum SignType {
+  option (gogoproto.goproto_enum_prefix)   = false;
+  option (gogoproto.goproto_enum_stringer) = false;
+
+  SIGN_TYPE_UNKNOWN = 0;
+  SIGN_TYPE_ORCHESTRATOR_SIGNED_MULTI_SIG_UPDATE = 1;
+  SIGN_TYPE_ORCHESTRATOR_SIGNED_WITHDRAW_BATCH = 2;
+}
+
+
+// OutgoingTxBatch represents a batch of transactions going from Peggy to ETH
+message OutgoingTxBatch {
+  uint64                      batch_nonce    = 1;
+  uint64                      batch_timeout  = 2;
+  repeated OutgoingTransferTx transactions   = 3;
+  string                      token_contract = 4;
+  uint64                      block          = 5;
+}
+
+// OutgoingTransferTx represents an individual send from Peggy to ETH
+message OutgoingTransferTx {
+  uint64     id           = 1;
+  string     sender       = 2;
+  string     dest_address = 3;
+  ERC20Token erc20_token  = 4;
+  ERC20Token erc20_fee    = 5;
+}
+
+
+// OutgoingTx is a withdrawal on the bridged contract
+// TODO: can this type be replaced by outgoing transfer tx
+message OutgoingTx {
+  string sender = 1;
+  string dest_addr = 2;
+  cosmos.base.v1beta1.Coin amount = 3 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin bridge_fee = 4 [(gogoproto.nullable) = false];
+}
+
+// IDSet represents a set of IDs
+message IDSet {
+  repeated uint64 ids = 1;
+}
+
+// BridgeValidator represents a validator's ETH address and its power
+message BridgeValidator {
+  uint64 power            = 1;
+  string ethereum_address = 2;
+}
+
+// Valset is the Ethereum Bridge Multsig Set, each peggy validator also
+// maintains an ETH key to sign messages, these are used to check signatures on
+// ETH because of the significant gas savings
+message Valset {
+  uint64                   nonce   = 1;
+  repeated BridgeValidator members = 2;
+  uint64                   height  = 3;
+}
+
+// LastObservedEthereumBlockHeight stores the last observed
+// Ethereum block height along with the Cosmos block height that
+// it was observed at. These two numbers can be used to project
+// outward and always produce batches with timeouts in the future
+// even if no Ethereum block height has been relayed for a long time
+message LastObservedEthereumBlockHeight {
+  uint64 cosmos_block_height = 1;
+  uint64 ethereum_block_height = 2;
+}

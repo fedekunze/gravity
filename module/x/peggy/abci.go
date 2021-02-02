@@ -34,16 +34,19 @@ func slashing(ctx sdk.Context, k keeper.Keeper) {
 		case signedWithinWindow:
 
 			// first we need to see which validators in the active set
-			// haven't signed the valdiator set and slash them,
+			// haven't signed the validator set and slash them,
 			confirms := k.GetValsetConfirms(ctx, vs.Nonce)
 			for _, val := range currentBondedSet {
 				found := false
 				for _, conf := range confirms {
-					if conf.EthAddress == k.GetEthAddress(ctx, val.GetOperator()) {
-						found = true
-						break
+					 address, hasEthAddress := k.GetEthAddress(ctx, val.GetOperator())
+						if hasEthAddress && address.String() == conf.EthAddress {
+							found = true
+							break
+						}
 					}
 				}
+
 				if !found {
 					cons, _ := val.GetConsAddr()
 					k.StakingKeeper.Slash(ctx, cons,

@@ -69,7 +69,7 @@ func (k Keeper) SetAttestationHandler(handler AttestationHandler) {
 }
 
 // GetAttestation return an attestation given a nonce
-func (k Keeper) GetAttestation(ctx sdk.Context, eventNonce uint64, claimHash []byte) (types.Attestation, boo.) {
+func (k Keeper) GetAttestation(ctx sdk.Context, eventNonce uint64, claimHash []byte) (types.Attestation, bool) {
 	store := ctx.KVStore(k.storeKey)
 	bz := store.Get(types.GetAttestationKey(eventNonce, claimHash))
 	if len(bz) == 0 {
@@ -78,7 +78,7 @@ func (k Keeper) GetAttestation(ctx sdk.Context, eventNonce uint64, claimHash []b
 
 	var att types.Attestation
 	k.cdc.MustUnmarshalBinaryBare(bz, &att)
-	return &att, true
+	return att, true
 }
 
 // SetAttestation sets the attestation in the store
@@ -386,14 +386,4 @@ func (k Keeper) GetOrchestratorValidator(ctx sdk.Context, orch sdk.AccAddress) s
 	}
 
 	return sdk.ValAddress(bz)
-}
-
-func (k Keeper) UnpackAttestationClaim(att *types.Attestation) (types.EthereumClaim, error) {
-	var msg types.EthereumClaim
-	err := k.cdc.UnpackAny(att.Claim, &msg)
-	if err != nil {
-		return nil, err
-	} else {
-		return msg, nil
-	}
 }
