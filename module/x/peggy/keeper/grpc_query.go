@@ -181,9 +181,8 @@ func (k Keeper) LastPendingBatchRequestByAddr(c context.Context, req *types.Quer
 
 	var pendingBatchReq *types.OutgoingTxBatch
 	k.IterateOutgoingTXBatches(ctx, func(_ []byte, batch *types.OutgoingTxBatch) bool {
-		batchConfirmation := k.GetBatchConfirm(ctx, batch.BatchNonce, batch.TokenContract, addr)
-
-		if batchConfirmation == nil {
+		_, found := k.GetBatchConfirm(ctx, batch.BatchNonce, batch.TokenContract, addr)
+		if !found {
 			pendingBatchReq = batch
 			return true
 		}
